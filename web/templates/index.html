@@ -406,6 +406,49 @@
             color: #0c5460;
         }
 
+        /* Stats selection */
+        .stats-selection {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        .stats-checkboxes {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .stats-checkboxes label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 8px 12px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            transition: all 0.2s;
+        }
+
+        .stats-checkboxes label:hover {
+            border-color: #2a5298;
+            background: #f0f4ff;
+        }
+
+        .stats-checkboxes input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .stats-checkboxes input[type="checkbox"]:checked + span {
+            color: #1e3c72;
+            font-weight: 500;
+        }
+
         /* Hidden */
         .hidden {
             display: none !important;
@@ -590,6 +633,14 @@
                             <div class="empty-state">Chargement des matchs...</div>
                         </div>
 
+                        <!-- Stats selection -->
+                        <div class="stats-selection">
+                            <h4 style="margin-bottom: 10px; color: #1e3c72;">Donnees a inclure dans le rapport :</h4>
+                            <div class="stats-checkboxes" id="statsCheckboxes">
+                                <!-- Will be populated by JS -->
+                            </div>
+                        </div>
+
                         <!-- Actions -->
                         <div class="actions-bar">
                             <span id="selectionCount" class="selection-count">0 match(s) selectionne(s)</span>
@@ -642,6 +693,7 @@
         let allMatches = [];
         let selectedMatches = new Set();
         let selectedFiles = [];
+        let statsOptions = {};
 
         // DOM Elements
         const setupScreen = document.getElementById('setupScreen');
@@ -669,6 +721,9 @@
         // Initialize
         async function init() {
             try {
+                // Load stats options
+                await loadStatsOptions();
+
                 const res = await fetch('/api/config');
                 const config = await res.json();
 
@@ -690,6 +745,40 @@
                 console.error('Init error:', error);
                 setupScreen.classList.remove('hidden');
             }
+        }
+
+        // Load stats options
+        async function loadStatsOptions() {
+            try {
+                const res = await fetch('/api/stats-options');
+                statsOptions = await res.json();
+                renderStatsCheckboxes();
+            } catch (error) {
+                console.error('Error loading stats options:', error);
+            }
+        }
+
+        // Render stats checkboxes
+        function renderStatsCheckboxes() {
+            const container = document.getElementById('statsCheckboxes');
+            if (!container) return;
+
+            container.innerHTML = Object.entries(statsOptions).map(([key, info]) => `
+                <label>
+                    <input type="checkbox" data-stat="${key}" ${info.default ? 'checked' : ''}>
+                    <span>${info.label}</span>
+                </label>
+            `).join('');
+        }
+
+        // Get selected stats
+        function getSelectedStats() {
+            const checkboxes = document.querySelectorAll('#statsCheckboxes input[type="checkbox"]');
+            const stats = {};
+            checkboxes.forEach(cb => {
+                stats[cb.dataset.stat] = cb.checked;
+            });
+            return stats;
         }
 
         // Detect game path
@@ -867,6 +956,7 @@
             if (selectedMatches.size === 0) return;
 
             const matchesToAnalyze = allMatches.filter(m => selectedMatches.has(m.folder));
+            const selectedStats = getSelectedStats();
 
             analyzeSelectedBtn.disabled = true;
             showStatus('Analyse en cours...', 'info');
@@ -877,7 +967,7 @@
                 const res = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ matches: matchesToAnalyze })
+                    body: JSON.stringify({ matches: matchesToAnalyze, stats: selectedStats })
                 });
 
                 const data = await res.json();

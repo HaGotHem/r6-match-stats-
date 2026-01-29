@@ -15,7 +15,12 @@ if sys.platform == 'win32':
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Analyse des matchs R6 Siege')
 parser.add_argument('--output-name', type=str, help='Nom du fichier de sortie (ex: Villa_2024-01-29_Ranked_2024-01-29-16-45.xlsx)')
+parser.add_argument('--stats', type=str, default='kills,kost,survival,headshots,opening,multikills,plants,rating',
+                    help='Stats a inclure (separes par virgule): kills,kost,survival,headshots,opening,multikills,plants,teamkills,rating')
 args = parser.parse_args()
+
+# Parser les stats demandees
+ENABLED_STATS = set(args.stats.split(',')) if args.stats else set(['kills', 'kost', 'survival', 'headshots', 'opening', 'multikills', 'plants', 'rating'])
 
 # Charger tous les rounds
 rounds_data = []
@@ -261,28 +266,54 @@ for username, stats in player_stats.items():
         # Rating (formule simplifiée)
         rating = (kpr * 0.7 + survival_rate/100 * 0.3) * 100 if rounds > 0 else 0
 
-        # Ajouter colonnes
-        row[f'{side_label} Rating'] = round(rating, 1)
-        row[f'{side_label} Kills'] = kills
-        row[f'{side_label} Deaths'] = deaths
-        row[f'{side_label} K/D'] = round(kd, 2)
-        row[f'{side_label} +/-'] = plus_minus
-        row[f'{side_label} Rounds'] = rounds
-        row[f'{side_label} KOST%'] = round(kost_pct, 1)
-        row[f'{side_label} Rounds KOST'] = kost_rounds_count
-        row[f'{side_label} KPR'] = round(kpr, 2)
-        row[f'{side_label} Rounds Survie'] = rounds_survived
-        row[f'{side_label} Temps Vie'] = f"{int(survival_time//60)}m{int(survival_time%60):02d}s"
-        row[f'{side_label} Temps Moy (s)'] = round(avg_survival, 1)
-        row[f'{side_label} HS'] = headshots
-        row[f'{side_label} HS%'] = round(hs_pct, 1)
-        row[f'{side_label} Opening K'] = opening_kills
-        row[f'{side_label} Opening D'] = opening_deaths
-        row[f'{side_label} Opening Ratio'] = round(opening_ratio, 2)
-        row[f'{side_label} Multi-kills'] = s.get('multikills', 0)
-        row[f'{side_label} Plantes'] = s.get('plants', 0)
-        row[f'{side_label} Diffuses'] = s.get('diffuses', 0)
-        row[f'{side_label} Teamkills'] = s.get('teamkills', 0)
+        # Ajouter colonnes selon les stats activees
+        # Rating toujours en premier si active
+        if 'rating' in ENABLED_STATS:
+            row[f'{side_label} Rating'] = round(rating, 1)
+
+        # Kills/Deaths/K-D
+        if 'kills' in ENABLED_STATS:
+            row[f'{side_label} Kills'] = kills
+            row[f'{side_label} Deaths'] = deaths
+            row[f'{side_label} K/D'] = round(kd, 2)
+            row[f'{side_label} +/-'] = plus_minus
+            row[f'{side_label} Rounds'] = rounds
+            row[f'{side_label} KPR'] = round(kpr, 2)
+
+        # KOST
+        if 'kost' in ENABLED_STATS:
+            row[f'{side_label} KOST%'] = round(kost_pct, 1)
+            row[f'{side_label} Rounds KOST'] = kost_rounds_count
+
+        # Survie
+        if 'survival' in ENABLED_STATS:
+            row[f'{side_label} Rounds Survie'] = rounds_survived
+            row[f'{side_label} Temps Vie'] = f"{int(survival_time//60)}m{int(survival_time%60):02d}s"
+            row[f'{side_label} Temps Moy (s)'] = round(avg_survival, 1)
+
+        # Headshots
+        if 'headshots' in ENABLED_STATS:
+            row[f'{side_label} HS'] = headshots
+            row[f'{side_label} HS%'] = round(hs_pct, 1)
+
+        # Opening
+        if 'opening' in ENABLED_STATS:
+            row[f'{side_label} Opening K'] = opening_kills
+            row[f'{side_label} Opening D'] = opening_deaths
+            row[f'{side_label} Opening Ratio'] = round(opening_ratio, 2)
+
+        # Multi-kills
+        if 'multikills' in ENABLED_STATS:
+            row[f'{side_label} Multi-kills'] = s.get('multikills', 0)
+
+        # Plantes/Defuses
+        if 'plants' in ENABLED_STATS:
+            row[f'{side_label} Plantes'] = s.get('plants', 0)
+            row[f'{side_label} Diffuses'] = s.get('diffuses', 0)
+
+        # Teamkills
+        if 'teamkills' in ENABLED_STATS:
+            row[f'{side_label} Teamkills'] = s.get('teamkills', 0)
 
     row['Equipe'] = 'VOTRE EQUIPE' if stats['team'] == 0 else 'EQUIPE ENNEMIE'
     results.append(row)
@@ -293,33 +324,54 @@ df = pd.DataFrame(results)
 # Trier par équipe puis par Rating global
 df = df.sort_values(['Equipe', 'GLOBAL Rating'], ascending=[True, False])
 
-# Réorganiser colonnes
+# Reorganiser colonnes selon les stats activees
 cols = ['Joueur', 'Equipe']
 for side in ['ATK', 'DEF', 'GLOBAL']:
-    cols.extend([
-        f'{side} Rating',
-        f'{side} Kills',
-        f'{side} Deaths',
-        f'{side} K/D',
-        f'{side} +/-',
-        f'{side} Rounds',
-        f'{side} KOST%',
-        f'{side} Rounds KOST',
-        f'{side} KPR',
-        f'{side} Rounds Survie',
-        f'{side} Temps Vie',
-        f'{side} Temps Moy (s)',
-        f'{side} HS',
-        f'{side} HS%',
-        f'{side} Opening K',
-        f'{side} Opening D',
-        f'{side} Opening Ratio',
-        f'{side} Multi-kills',
-        f'{side} Plantes',
-        f'{side} Diffuses',
-        f'{side} Teamkills',
-    ])
+    if 'rating' in ENABLED_STATS:
+        cols.append(f'{side} Rating')
+    if 'kills' in ENABLED_STATS:
+        cols.extend([
+            f'{side} Kills',
+            f'{side} Deaths',
+            f'{side} K/D',
+            f'{side} +/-',
+            f'{side} Rounds',
+            f'{side} KPR',
+        ])
+    if 'kost' in ENABLED_STATS:
+        cols.extend([
+            f'{side} KOST%',
+            f'{side} Rounds KOST',
+        ])
+    if 'survival' in ENABLED_STATS:
+        cols.extend([
+            f'{side} Rounds Survie',
+            f'{side} Temps Vie',
+            f'{side} Temps Moy (s)',
+        ])
+    if 'headshots' in ENABLED_STATS:
+        cols.extend([
+            f'{side} HS',
+            f'{side} HS%',
+        ])
+    if 'opening' in ENABLED_STATS:
+        cols.extend([
+            f'{side} Opening K',
+            f'{side} Opening D',
+            f'{side} Opening Ratio',
+        ])
+    if 'multikills' in ENABLED_STATS:
+        cols.append(f'{side} Multi-kills')
+    if 'plants' in ENABLED_STATS:
+        cols.extend([
+            f'{side} Plantes',
+            f'{side} Diffuses',
+        ])
+    if 'teamkills' in ENABLED_STATS:
+        cols.append(f'{side} Teamkills')
 
+# Filtrer les colonnes qui existent dans le DataFrame
+cols = [c for c in cols if c in df.columns]
 df = df[cols]
 
 # Sauvegarder avec mise en forme

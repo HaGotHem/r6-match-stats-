@@ -50,35 +50,70 @@ def save_config(config):
 
 
 def detect_game_path():
-    """Detecter automatiquement le chemin d'installation du jeu"""
-    common_paths = []
+    """Detecter automatiquement le chemin d'installation du jeu sur tous les disques"""
+    found_paths = []
 
-    # Chemins courants pour Ubisoft Connect
+    # Scanner tous les disques disponibles
     for drive in string.ascii_uppercase:
         drive_path = f"{drive}:\\"
-        if os.path.exists(drive_path):
-            common_paths.extend([
-                f"{drive}:\\Program Files\\Ubisoft\\Ubisoft Game Launcher\\games\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\Program Files (x86)\\Ubisoft\\Ubisoft Game Launcher\\games\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\Ubisoft\\Ubisoft Game Launcher\\games\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\Games\\Ubisoft\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\Ubisoft Games\\Tom Clancy's Rainbow Six Siege",
-                # Steam paths
-                f"{drive}:\\Program Files\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\Program Files (x86)\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\SteamLibrary\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
-                f"{drive}:\\Games\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
-            ])
+        if not os.path.exists(drive_path):
+            continue
 
-    for path in common_paths:
-        if os.path.exists(path):
-            # Verifier que MatchReplay existe
-            replay_path = os.path.join(path, "MatchReplay")
-            if os.path.exists(replay_path):
-                return path
+        # Chemins Ubisoft Connect
+        ubisoft_paths = [
+            f"{drive}:\\Program Files\\Ubisoft\\Ubisoft Game Launcher\\games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Program Files (x86)\\Ubisoft\\Ubisoft Game Launcher\\games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Ubisoft\\Ubisoft Game Launcher\\games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Games\\Ubisoft\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Ubisoft Games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Ubisoft\\games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Program Files\\Ubisoft Games\\Tom Clancy's Rainbow Six Siege",
+        ]
 
-    return None
+        # Chemins Steam
+        steam_paths = [
+            f"{drive}:\\Program Files\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Program Files (x86)\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\SteamLibrary\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Games\\Steam\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Games\\SteamLibrary\\steamapps\\common\\Tom Clancy's Rainbow Six Siege",
+        ]
+
+        # Chemins Epic Games
+        epic_paths = [
+            f"{drive}:\\Program Files\\Epic Games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Program Files (x86)\\Epic Games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Epic Games\\Tom Clancy's Rainbow Six Siege",
+            f"{drive}:\\Games\\Epic Games\\Tom Clancy's Rainbow Six Siege",
+        ]
+
+        all_paths = ubisoft_paths + steam_paths + epic_paths
+
+        for path in all_paths:
+            if os.path.exists(path):
+                replay_path = os.path.join(path, "MatchReplay")
+                if os.path.exists(replay_path):
+                    found_paths.append(path)
+
+    # Retourner le premier trouve, ou None
+    return found_paths[0] if found_paths else None
+
+
+def get_available_stats():
+    """Retourner la liste des categories de stats disponibles"""
+    return {
+        'kills': {'label': 'Kills / Deaths / K/D', 'default': True},
+        'kost': {'label': 'KOST %', 'default': True},
+        'survival': {'label': 'Survie (temps, rounds)', 'default': True},
+        'headshots': {'label': 'Headshots / HS%', 'default': True},
+        'opening': {'label': 'Opening Kills/Deaths', 'default': True},
+        'multikills': {'label': 'Multi-kills', 'default': True},
+        'plants': {'label': 'Plantes / Defuses', 'default': True},
+        'teamkills': {'label': 'Teamkills', 'default': False},
+        'rating': {'label': 'Rating', 'default': True},
+    }
 
 
 def get_match_metadata(match_dir):
@@ -211,6 +246,12 @@ def detect_game():
         return jsonify({'found': False, 'path': None})
 
 
+@app.route('/api/stats-options')
+def stats_options():
+    """Retourner les options de stats disponibles"""
+    return jsonify(get_available_stats())
+
+
 @app.route('/api/replays')
 def list_replays():
     """Scanner le dossier MatchReplay et retourner la liste des matchs"""
@@ -256,11 +297,19 @@ def analyze_matches():
     try:
         data = request.get_json()
         selected_matches = data.get('matches', [])
+        stats_options = data.get('stats', {})
 
         if not selected_matches:
             return jsonify({'error': 'Aucun match selectionne'}), 400
 
+        # Construire la liste des stats a inclure
+        enabled_stats = []
+        for stat_key, stat_info in get_available_stats().items():
+            if stats_options.get(stat_key, stat_info['default']):
+                enabled_stats.append(stat_key)
+
         print(f"\n[DEBUG] Analyse de {len(selected_matches)} match(s)")
+        print(f"[DEBUG] Stats activees: {enabled_stats}")
 
         reports = []
 
@@ -336,8 +385,13 @@ def analyze_matches():
             project_root = os.path.dirname(os.path.dirname(__file__))
             os.chdir(project_root)
 
+            # Construire la commande avec les options de stats
+            cmd = [sys.executable, analyze_script, '--output-name', output_name]
+            if enabled_stats:
+                cmd.extend(['--stats', ','.join(enabled_stats)])
+
             result = subprocess.run(
-                [sys.executable, analyze_script, '--output-name', output_name],
+                cmd,
                 capture_output=True,
                 text=True
             )
