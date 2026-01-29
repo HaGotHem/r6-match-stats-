@@ -406,12 +406,20 @@
             color: #0c5460;
         }
 
-        /* Stats selection */
-        .stats-selection {
+        /* Data selection panel */
+        .data-selection-panel {
             background: #f8f9fa;
             padding: 15px;
             border-radius: 8px;
             margin-top: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        /* Stats selection */
+        .stats-selection {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
             border: 1px solid #e9ecef;
         }
 
@@ -562,7 +570,10 @@
         <!-- Setup Screen (shown on first launch) -->
         <div id="setupScreen" class="card hidden">
             <h2>Configuration initiale</h2>
-            <p>Localisez votre dossier d'installation Rainbow Six Siege</p>
+            <p>Localisez votre dossier d'installation Rainbow Six Siege (optionnel)</p>
+            <p style="font-size: 0.9rem; color: #666; margin-top: 10px;">
+                Vous pouvez passer cette étape et utiliser l'import manuel de fichiers .rec
+            </p>
 
             <div id="detectedPath" class="detected-path hidden">
                 <strong>Chemin detecte :</strong> <span id="detectedPathValue"></span>
@@ -571,10 +582,13 @@
             <div class="setup-form">
                 <div class="input-group">
                     <input type="text" id="gamePath" placeholder="C:\Program Files\Ubisoft\...\Tom Clancy's Rainbow Six Siege">
+                    <button class="btn btn-secondary" onclick="browseFolder()" style="white-space: nowrap;">Parcourir</button>
                 </div>
-                <div style="display: flex; gap: 10px; justify-content: center;">
+                <input type="file" id="folderPicker" webkitdirectory directory multiple style="display: none;" onchange="handleFolderSelection(event)">
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
                     <button class="btn btn-detect" onclick="detectGame()">Detecter automatiquement</button>
                     <button class="btn btn-success" onclick="saveConfig()">Valider</button>
+                    <button class="btn btn-secondary" onclick="skipConfig()">Passer cette etape</button>
                 </div>
             </div>
 
@@ -592,7 +606,10 @@
                         <div class="config-path">
                             <strong>Dossier replays :</strong> <span id="replayPathDisplay">-</span>
                         </div>
-                        <button class="btn btn-secondary" onclick="showSetup()" style="padding: 8px 15px; font-size: 0.9rem;">Modifier</button>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-secondary" onclick="showSetup()" style="padding: 8px 15px; font-size: 0.9rem;">Configurer</button>
+                            <button class="btn" onclick="refreshReplays()" style="padding: 8px 15px; font-size: 0.9rem;">Actualiser</button>
+                        </div>
                     </div>
 
                     <!-- Tabs -->
@@ -603,6 +620,14 @@
 
                     <!-- Auto-detection tab -->
                     <div id="autoTab" class="tab-content active">
+                        <div id="noConfigMessage" class="scan-info" style="background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; display: none;">
+                            <strong>⚠️ Configuration requise</strong><br>
+                            Pour utiliser l'auto-détection, veuillez configurer le chemin du jeu dans l'écran de configuration initiale.
+                            <br><br>
+                            <button class="btn" onclick="showSetup()" style="padding: 8px 15px; font-size: 0.9rem;">Configurer maintenant</button>
+                            <br><br>
+                            <strong>Ou</strong> utilisez l'onglet "Import manuel" pour analyser des fichiers .rec directement.
+                        </div>
                         <div id="scanInfo" class="scan-info hidden">
                             <span id="matchCount">0</span> match(s) trouve(s)
                         </div>
@@ -633,18 +658,103 @@
                             <div class="empty-state">Chargement des matchs...</div>
                         </div>
 
-                        <!-- Stats selection -->
-                        <div class="stats-selection">
-                            <h4 style="margin-bottom: 10px; color: #1e3c72;">Donnees a inclure dans le rapport :</h4>
-                            <div class="stats-checkboxes" id="statsCheckboxes">
-                                <!-- Will be populated by JS -->
+                        <!-- Data selection panel -->
+                        <div class="data-selection-panel">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                                <h4 style="margin: 0; color: #1e3c72;">Options d'analyse</h4>
+                                <button class="btn btn-secondary" onclick="toggleDataSelection()" style="padding: 6px 12px; font-size: 0.85rem;">
+                                    <span id="toggleDataSelectionText">Masquer</span>
+                                </button>
+                            </div>
+                            
+                            <div id="dataSelectionContent">
+                                <!-- Stats selection -->
+                                <div class="stats-selection">
+                                    <h5 style="margin-bottom: 10px; color: #1e3c72; font-size: 1rem;">Statistiques à inclure :</h5>
+                                    <div class="stats-checkboxes" id="statsCheckboxes">
+                                        <!-- Will be populated by JS -->
+                                    </div>
+                                    <div style="margin-top: 10px; display: flex; gap: 10px;">
+                                        <button class="btn btn-secondary" onclick="selectAllStats()" style="padding: 6px 12px; font-size: 0.85rem;">Tout sélectionner</button>
+                                        <button class="btn btn-secondary" onclick="deselectAllStats()" style="padding: 6px 12px; font-size: 0.85rem;">Tout désélectionner</button>
+                                    </div>
+                                </div>
+
+                                <!-- Rounds selection -->
+                                <div class="rounds-selection" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e9ecef;">
+                                    <h5 style="margin-bottom: 10px; color: #1e3c72; font-size: 1rem;">Rounds à analyser :</h5>
+                                    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="roundsMode" value="all" checked onchange="updateRoundsSelection()">
+                                            <span>Tous les rounds</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="roundsMode" value="range" onchange="updateRoundsSelection()">
+                                            <span>Plage de rounds :</span>
+                                        </label>
+                                        <div id="roundsRangeInput" style="display: none; gap: 10px; align-items: center;">
+                                            <input type="number" id="roundsStart" min="1" max="20" value="1" style="width: 80px; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                            <span>à</span>
+                                            <input type="number" id="roundsEnd" min="1" max="20" value="12" style="width: 80px; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                        </div>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="roundsMode" value="custom" onchange="updateRoundsSelection()">
+                                            <span>Rounds spécifiques :</span>
+                                        </label>
+                                        <div id="roundsCustomInput" style="display: none;">
+                                            <input type="text" id="roundsCustom" placeholder="Ex: 1,2,3,5-8,12" style="width: 200px; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                            <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Format: 1,2,3 ou 1-5 ou 1,3-5,8</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Players filter -->
+                                <div class="players-filter" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e9ecef;">
+                                    <h5 style="margin-bottom: 10px; color: #1e3c72; font-size: 1rem;">Filtrage par joueurs :</h5>
+                                    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="playersMode" value="all" checked onchange="updatePlayersFilter()">
+                                            <span>Tous les joueurs</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="playersMode" value="team" onchange="updatePlayersFilter()">
+                                            <span>Mon équipe uniquement</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="radio" name="playersMode" value="specific" onchange="updatePlayersFilter()">
+                                            <span>Joueurs spécifiques :</span>
+                                        </label>
+                                        <div id="playersSpecificInput" style="display: none;">
+                                            <input type="text" id="playersSpecific" placeholder="Noms séparés par des virgules" style="width: 300px; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Sides selection -->
+                                <div class="sides-selection" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e9ecef;">
+                                    <h5 style="margin-bottom: 10px; color: #1e3c72; font-size: 1rem;">Sides à inclure :</h5>
+                                    <div class="stats-checkboxes" style="grid-template-columns: repeat(3, 1fr);">
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
+                                            <input type="checkbox" id="sideATK" checked>
+                                            <span>ATK</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
+                                            <input type="checkbox" id="sideDEF" checked>
+                                            <span>DEF</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
+                                            <input type="checkbox" id="sideGLOBAL" checked>
+                                            <span>GLOBAL</span>
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Actions -->
                         <div class="actions-bar">
                             <span id="selectionCount" class="selection-count">0 match(s) selectionne(s)</span>
-                            <button id="analyzeSelectedBtn" class="btn btn-success" onclick="analyzeSelected()" disabled>Analyser la selection</button>
+                            <button id="analyzeSelectedBtn" type="button" class="btn btn-success" onclick="analyzeSelected(event)" disabled>Analyser la selection</button>
                         </div>
                     </div>
 
@@ -747,6 +857,67 @@
             }
         }
 
+        // Skip configuration
+        function skipConfig() {
+            setupScreen.classList.add('hidden');
+            mainInterface.classList.remove('hidden');
+            replayPathDisplay.textContent = 'Non configuré - Utilisez l\'import manuel';
+            // Switch to manual tab
+            switchTab('manual');
+            // Load replays will show the no config message
+            loadReplays();
+        }
+
+        // Browse folder
+        function browseFolder() {
+            const folderPicker = document.getElementById('folderPicker');
+            // Reset the input to allow selecting the same folder again
+            folderPicker.value = '';
+            folderPicker.click();
+        }
+
+        // Handle folder selection
+        function handleFolderSelection(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                const firstFile = files[0];
+                const relativePath = firstFile.webkitRelativePath || '';
+                const pathParts = relativePath.split('/');
+                
+                // Try to find MatchReplay in the path
+                let matchReplayIndex = pathParts.indexOf('MatchReplay');
+                if (matchReplayIndex >= 0) {
+                    // User selected MatchReplay folder or a subfolder
+                    // Extract the game path (parent of MatchReplay)
+                    // We can't get the full path, but we can guide the user
+                    showSetupStatus('Dossier MatchReplay détecté dans la sélection. Veuillez entrer le chemin complet du dossier d\'installation du jeu (parent de MatchReplay) dans le champ ci-dessus, ou utilisez "Détecter automatiquement".', 'info');
+                    
+                    // Try to extract a hint from the path
+                    if (matchReplayIndex > 0) {
+                        const gameFolderHint = pathParts[matchReplayIndex - 1];
+                        if (gameFolderHint.includes('Rainbow Six Siege')) {
+                            showSetupStatus(`Dossier détecté: ${gameFolderHint}. Veuillez entrer le chemin complet dans le champ ci-dessus.`, 'info');
+                        }
+                    }
+                    return;
+                }
+                
+                // Check if user selected the game folder directly
+                for (let i = 0; i < pathParts.length; i++) {
+                    if (pathParts[i].includes('Rainbow Six Siege')) {
+                        showSetupStatus('Dossier du jeu détecté. Le chemin sera automatiquement complété avec "\\MatchReplay".', 'info');
+                        // We can't set the full path automatically, but we can guide
+                        return;
+                    }
+                }
+                
+                // Generic message
+                showSetupStatus('Dossier sélectionné. Veuillez sélectionner le dossier "MatchReplay" ou le dossier d\'installation du jeu. Si vous avez sélectionné le dossier du jeu, entrez le chemin complet dans le champ ci-dessus.', 'info');
+            } else {
+                showSetupStatus('Aucun fichier sélectionné. Veuillez sélectionner un dossier contenant des fichiers.', 'error');
+            }
+        }
+
         // Load stats options
         async function loadStatsOptions() {
             try {
@@ -779,6 +950,96 @@
                 stats[cb.dataset.stat] = cb.checked;
             });
             return stats;
+        }
+
+        // Get analysis options
+        function getAnalysisOptions() {
+            const options = {
+                stats: getSelectedStats(),
+                rounds: getRoundsSelection(),
+                players: getPlayersFilter(),
+                sides: getSidesSelection()
+            };
+            return options;
+        }
+
+        // Get rounds selection
+        function getRoundsSelection() {
+            const mode = document.querySelector('input[name="roundsMode"]:checked').value;
+            if (mode === 'all') {
+                return { mode: 'all' };
+            } else if (mode === 'range') {
+                const start = parseInt(document.getElementById('roundsStart').value) || 1;
+                const end = parseInt(document.getElementById('roundsEnd').value) || 12;
+                return { mode: 'range', start: start, end: end };
+            } else if (mode === 'custom') {
+                const custom = document.getElementById('roundsCustom').value.trim();
+                return { mode: 'custom', rounds: custom };
+            }
+            return { mode: 'all' };
+        }
+
+        // Get players filter
+        function getPlayersFilter() {
+            const mode = document.querySelector('input[name="playersMode"]:checked').value;
+            if (mode === 'all') {
+                return { mode: 'all' };
+            } else if (mode === 'team') {
+                return { mode: 'team' };
+            } else if (mode === 'specific') {
+                const players = document.getElementById('playersSpecific').value.trim();
+                return { mode: 'specific', players: players.split(',').map(p => p.trim()).filter(p => p) };
+            }
+            return { mode: 'all' };
+        }
+
+        // Get sides selection
+        function getSidesSelection() {
+            return {
+                atk: document.getElementById('sideATK').checked,
+                def: document.getElementById('sideDEF').checked,
+                global: document.getElementById('sideGLOBAL').checked
+            };
+        }
+
+        // Update rounds selection UI
+        function updateRoundsSelection() {
+            const mode = document.querySelector('input[name="roundsMode"]:checked').value;
+            document.getElementById('roundsRangeInput').style.display = mode === 'range' ? 'flex' : 'none';
+            document.getElementById('roundsCustomInput').style.display = mode === 'custom' ? 'block' : 'none';
+        }
+
+        // Update players filter UI
+        function updatePlayersFilter() {
+            const mode = document.querySelector('input[name="playersMode"]:checked').value;
+            document.getElementById('playersSpecificInput').style.display = mode === 'specific' ? 'block' : 'none';
+        }
+
+        // Toggle data selection panel
+        function toggleDataSelection() {
+            const content = document.getElementById('dataSelectionContent');
+            const toggleText = document.getElementById('toggleDataSelectionText');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                toggleText.textContent = 'Masquer';
+            } else {
+                content.style.display = 'none';
+                toggleText.textContent = 'Afficher';
+            }
+        }
+
+        // Select all stats
+        function selectAllStats() {
+            document.querySelectorAll('#statsCheckboxes input[type="checkbox"]').forEach(cb => {
+                cb.checked = true;
+            });
+        }
+
+        // Deselect all stats
+        function deselectAllStats() {
+            document.querySelectorAll('#statsCheckboxes input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
         }
 
         // Detect game path
@@ -840,11 +1101,14 @@
         function showSetup() {
             mainInterface.classList.add('hidden');
             setupScreen.classList.remove('hidden');
+            // Try to detect again
+            detectGame();
         }
 
         // Load replays
         async function loadReplays() {
             try {
+                const noConfigMessage = document.getElementById('noConfigMessage');
                 matchList.innerHTML = '<div class="empty-state">Scan en cours...</div>';
 
                 const res = await fetch('/api/replays');
@@ -852,13 +1116,19 @@
 
                 if (!res.ok) {
                     if (data.needsSetup) {
-                        showSetup();
+                        // Show no config message
+                        noConfigMessage.style.display = 'block';
+                        scanInfo.classList.add('hidden');
+                        matchList.innerHTML = '';
                         return;
                     }
+                    noConfigMessage.style.display = 'none';
                     matchList.innerHTML = `<div class="empty-state">Erreur: ${data.error}</div>`;
                     return;
                 }
 
+                // Hide no config message if we have config
+                noConfigMessage.style.display = 'none';
                 allMatches = data.matches;
                 matchCount.textContent = data.total;
                 scanInfo.classList.remove('hidden');
@@ -866,7 +1136,9 @@
                 renderMatches();
             } catch (error) {
                 console.error('Load replays error:', error);
-                matchList.innerHTML = '<div class="empty-state">Erreur de chargement</div>';
+                const noConfigMessage = document.getElementById('noConfigMessage');
+                noConfigMessage.style.display = 'block';
+                matchList.innerHTML = '';
             }
         }
 
@@ -952,11 +1224,17 @@
         }
 
         // Analyze selected matches
-        async function analyzeSelected() {
+        async function analyzeSelected(event) {
+            // Prevent any default form submission behavior
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
             if (selectedMatches.size === 0) return;
 
             const matchesToAnalyze = allMatches.filter(m => selectedMatches.has(m.folder));
-            const selectedStats = getSelectedStats();
+            const analysisOptions = getAnalysisOptions();
 
             analyzeSelectedBtn.disabled = true;
             showStatus('Analyse en cours...', 'info');
@@ -967,7 +1245,13 @@
                 const res = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ matches: matchesToAnalyze, stats: selectedStats })
+                    body: JSON.stringify({ 
+                        matches: matchesToAnalyze, 
+                        stats: analysisOptions.stats,
+                        rounds: analysisOptions.rounds,
+                        players: analysisOptions.players,
+                        sides: analysisOptions.sides
+                    })
                 });
 
                 const data = await res.json();
@@ -984,8 +1268,9 @@
                     showStatus(data.error || 'Erreur lors de l\'analyse', 'error');
                 }
             } catch (error) {
+                console.error('Analyze error:', error);
                 hideProgress();
-                showStatus('Erreur de connexion', 'error');
+                showStatus('Erreur de connexion: ' + error.message, 'error');
             } finally {
                 analyzeSelectedBtn.disabled = false;
             }

@@ -136,6 +136,43 @@ def get_available_stats():
     }
 
 
+def get_rounds_to_parse(total_rounds, rounds_options):
+    """Determiner quels rounds parser selon les options"""
+    mode = rounds_options.get('mode', 'all')
+    
+    if mode == 'all':
+        return set(range(1, total_rounds + 1))
+    elif mode == 'range':
+        start = max(1, rounds_options.get('start', 1))
+        end = min(total_rounds, rounds_options.get('end', total_rounds))
+        return set(range(start, end + 1))
+    elif mode == 'custom':
+        rounds_str = rounds_options.get('rounds', '')
+        rounds_set = set()
+        
+        # Parser la chaine (ex: "1,2,3,5-8,12")
+        for part in rounds_str.split(','):
+            part = part.strip()
+            if '-' in part:
+                # Plage (ex: "5-8")
+                start, end = part.split('-')
+                start = max(1, int(start.strip()))
+                end = min(total_rounds, int(end.strip()))
+                rounds_set.update(range(start, end + 1))
+            else:
+                # Nombre unique
+                try:
+                    round_num = int(part)
+                    if 1 <= round_num <= total_rounds:
+                        rounds_set.add(round_num)
+                except ValueError:
+                    continue
+        
+        return rounds_set if rounds_set else set(range(1, total_rounds + 1))
+    
+    return set(range(1, total_rounds + 1))
+
+
 def get_match_metadata(match_dir):
     """Extraire les metadonnees d'un match depuis le premier fichier .rec"""
     rec_files = sorted([f for f in os.listdir(match_dir) if f.endswith('.rec')])
@@ -318,6 +355,9 @@ def analyze_matches():
         data = request.get_json()
         selected_matches = data.get('matches', [])
         stats_options = data.get('stats', {})
+        rounds_options = data.get('rounds', {'mode': 'all'})
+        players_options = data.get('players', {'mode': 'all'})
+        sides_options = data.get('sides', {'atk': True, 'def': True, 'global': True})
 
         if not selected_matches:
             return jsonify({'error': 'Aucun match selectionne'}), 400
@@ -330,6 +370,9 @@ def analyze_matches():
 
         print(f"\n[DEBUG] Analyse de {len(selected_matches)} match(s)")
         print(f"[DEBUG] Stats activees: {enabled_stats}")
+        print(f"[DEBUG] Options rounds: {rounds_options}")
+        print(f"[DEBUG] Options players: {players_options}")
+        print(f"[DEBUG] Options sides: {sides_options}")
 
         reports = []
 
@@ -357,8 +400,15 @@ def analyze_matches():
             # Parser tous les fichiers .rec du match
             rec_files = sorted([f for f in os.listdir(match_path) if f.endswith('.rec')])
 
+            # Determiner quels rounds parser selon les options
+            rounds_to_parse = get_rounds_to_parse(len(rec_files), rounds_options)
+
             parsed_files = []
             for idx, rec_file in enumerate(rec_files, 1):
+                # Ne parser que les rounds selectionnes
+                if idx not in rounds_to_parse:
+                    continue
+
                 rec_path = os.path.join(match_path, rec_file)
                 json_filename = f"round{idx:02d}.json"
                 json_path = os.path.join(app.config['MATCH_DATA_FOLDER'], json_filename)
@@ -409,6 +459,20 @@ def analyze_matches():
             cmd = [sys.executable, analyze_script, '--output-name', output_name]
             if enabled_stats:
                 cmd.extend(['--stats', ','.join(enabled_stats)])
+            
+            # Ajouter les options de filtrage
+            if players_options.get('mode') != 'all':
+                if players_options.get('mode') == 'team':
+                    cmd.extend(['--players-mode', 'team'])
+                elif players_options.get('mode') == 'specific' and players_options.get('players'):
+                    cmd.extend(['--players', ','.join(players_options['players'])])
+            
+            if not sides_options.get('atk', True):
+                cmd.append('--no-atk')
+            if not sides_options.get('def', True):
+                cmd.append('--no-def')
+            if not sides_options.get('global', True):
+                cmd.append('--no-global')
 
             result = subprocess.run(
                 cmd,
@@ -645,4 +709,5 @@ if __name__ == '__main__':
     print("Appuyez sur Ctrl+C pour arreter le serveur")
     print("=" * 60)
 
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Note: use_reloader=False to prevent server restart when files change during analysis
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)

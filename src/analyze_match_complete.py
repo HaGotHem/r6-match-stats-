@@ -17,10 +17,24 @@ parser = argparse.ArgumentParser(description='Analyse des matchs R6 Siege')
 parser.add_argument('--output-name', type=str, help='Nom du fichier de sortie (ex: Villa_2024-01-29_Ranked_2024-01-29-16-45.xlsx)')
 parser.add_argument('--stats', type=str, default='kills,kost,survival,headshots,opening,multikills,plants,rating',
                     help='Stats a inclure (separes par virgule): kills,kost,survival,headshots,opening,multikills,plants,teamkills,rating')
+parser.add_argument('--players-mode', type=str, choices=['team', 'specific'], help='Mode de filtrage des joueurs')
+parser.add_argument('--players', type=str, help='Liste de joueurs (separes par virgule)')
+parser.add_argument('--no-atk', action='store_true', help='Exclure les stats ATK')
+parser.add_argument('--no-def', action='store_true', help='Exclure les stats DEF')
+parser.add_argument('--no-global', action='store_true', help='Exclure les stats GLOBAL')
 args = parser.parse_args()
 
 # Parser les stats demandees
 ENABLED_STATS = set(args.stats.split(',')) if args.stats else set(['kills', 'kost', 'survival', 'headshots', 'opening', 'multikills', 'plants', 'rating'])
+
+# Options de filtrage
+PLAYERS_MODE = args.players_mode
+PLAYERS_LIST = args.players.split(',') if args.players else []
+PLAYERS_LIST = [p.strip() for p in PLAYERS_LIST]
+
+INCLUDE_ATK = not args.no_atk
+INCLUDE_DEF = not args.no_def
+INCLUDE_GLOBAL = not args.no_global
 
 # Charger tous les rounds
 rounds_data = []
@@ -219,12 +233,34 @@ for round_num, round_data in enumerate(rounds_data, 1):
         if kost_fulfilled:
             player_stats[username][f'{side}_kost_rounds'].append(round_num)
 
+# Filtrer les joueurs selon les options
+filtered_players = set(player_stats.keys())
+
+if PLAYERS_MODE == 'team':
+    # Garder seulement les joueurs de l'équipe 0 (VOTRE EQUIPE)
+    filtered_players = {username for username, stats in player_stats.items() if stats.get('team') == 0}
+elif PLAYERS_MODE == 'specific' and PLAYERS_LIST:
+    # Garder seulement les joueurs spécifiés
+    filtered_players = {username for username in player_stats.keys() if username in PLAYERS_LIST}
+
 # Calculer les métriques finales
 results = []
 for username, stats in player_stats.items():
+    # Filtrer les joueurs
+    if username not in filtered_players:
+        continue
+    
     row = {'Joueur': username}
 
-    for side_key, side_label in [('atk', 'ATK'), ('def', 'DEF'), ('global', 'GLOBAL')]:
+    sides_to_process = []
+    if INCLUDE_ATK:
+        sides_to_process.append(('atk', 'ATK'))
+    if INCLUDE_DEF:
+        sides_to_process.append(('def', 'DEF'))
+    if INCLUDE_GLOBAL:
+        sides_to_process.append(('global', 'GLOBAL'))
+
+    for side_key, side_label in sides_to_process:
         s = stats[side_key]
 
         # Calculs de base
@@ -321,12 +357,31 @@ for username, stats in player_stats.items():
 # Créer DataFrame
 df = pd.DataFrame(results)
 
-# Trier par équipe puis par Rating global
-df = df.sort_values(['Equipe', 'GLOBAL Rating'], ascending=[True, False])
+# Trier par équipe puis par Rating (utiliser le premier side disponible)
+sort_columns = ['Equipe']
+if INCLUDE_GLOBAL and 'GLOBAL Rating' in df.columns:
+    sort_columns.append('GLOBAL Rating')
+elif INCLUDE_ATK and 'ATK Rating' in df.columns:
+    sort_columns.append('ATK Rating')
+elif INCLUDE_DEF and 'DEF Rating' in df.columns:
+    sort_columns.append('DEF Rating')
 
-# Reorganiser colonnes selon les stats activees
+if len(sort_columns) > 1 and sort_columns[1] in df.columns:
+    df = df.sort_values(sort_columns, ascending=[True, False])
+else:
+    df = df.sort_values(['Equipe'], ascending=[True])
+
+# Reorganiser colonnes selon les stats activees et les sides selectionnes
 cols = ['Joueur', 'Equipe']
-for side in ['ATK', 'DEF', 'GLOBAL']:
+sides_to_include = []
+if INCLUDE_ATK:
+    sides_to_include.append('ATK')
+if INCLUDE_DEF:
+    sides_to_include.append('DEF')
+if INCLUDE_GLOBAL:
+    sides_to_include.append('GLOBAL')
+
+for side in sides_to_include:
     if 'rating' in ENABLED_STATS:
         cols.append(f'{side} Rating')
     if 'kills' in ENABLED_STATS:
