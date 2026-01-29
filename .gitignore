@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files (user-specific)
+data/uploads/
+data/match_data/*.json
+data/reports/*.xlsx
+
+# Keep folder structure
+!data/uploads/.gitkeep
+!data/match_data/.gitkeep
+!data/reports/.gitkeep
+
+# Config (user-specific paths)
+data/config.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Claude
+.claude/
