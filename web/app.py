@@ -15,12 +15,32 @@ import zipfile
 import string
 import re
 
-app = Flask(__name__)
+# Determine base directory (works for both script and compiled exe)
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    BASE_DIR = os.environ.get('R6_ANALYST_BASE', os.path.dirname(sys.executable))
+    BUNDLE_DIR = os.environ.get('R6_ANALYST_BUNDLE', getattr(sys, '_MEIPASS', BASE_DIR))
+    TEMPLATE_DIR = os.path.join(BUNDLE_DIR, 'web', 'templates')
+    TOOLS_DIR = os.path.join(BUNDLE_DIR, 'tools')
+    SRC_DIR = os.path.join(BUNDLE_DIR, 'src')
+else:
+    # Running as script
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    BUNDLE_DIR = BASE_DIR
+    TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'templates')
+    TOOLS_DIR = os.path.join(BASE_DIR, 'tools')
+    SRC_DIR = os.path.join(BASE_DIR, 'src')
+
+app = Flask(__name__, template_folder=TEMPLATE_DIR)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'uploads')
-app.config['MATCH_DATA_FOLDER'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'match_data')
-app.config['REPORTS_FOLDER'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'reports')
-app.config['CONFIG_FILE'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'config.json')
+app.config['BASE_DIR'] = BASE_DIR
+app.config['BUNDLE_DIR'] = BUNDLE_DIR
+app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'data', 'uploads')
+app.config['MATCH_DATA_FOLDER'] = os.path.join(BASE_DIR, 'data', 'match_data')
+app.config['REPORTS_FOLDER'] = os.path.join(BASE_DIR, 'data', 'reports')
+app.config['CONFIG_FILE'] = os.path.join(BASE_DIR, 'data', 'config.json')
+app.config['TOOLS_DIR'] = TOOLS_DIR
+app.config['SRC_DIR'] = SRC_DIR
 
 # Creer les dossiers s'ils n'existent pas
 for folder in [app.config['UPLOAD_FOLDER'], app.config['MATCH_DATA_FOLDER'], app.config['REPORTS_FOLDER']]:
@@ -124,7 +144,7 @@ def get_match_metadata(match_dir):
         return None
 
     # Chemin vers r6-dissect.exe
-    tools_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tools')
+    tools_dir = app.config['TOOLS_DIR']
     r6_dissect = os.path.join(tools_dir, 'r6-dissect.exe')
 
     if not os.path.exists(r6_dissect):
@@ -328,7 +348,7 @@ def analyze_matches():
                     os.unlink(filepath)
 
             # Chemin vers r6-dissect.exe
-            tools_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tools')
+            tools_dir = app.config['TOOLS_DIR']
             r6_dissect = os.path.join(tools_dir, 'r6-dissect.exe')
 
             if not os.path.exists(r6_dissect):
@@ -377,12 +397,12 @@ def analyze_matches():
             output_name = f"{map_name}_{date_game}_{match_category}_{date_analyse}.xlsx"
 
             # Executer le script d'analyse Python
-            src_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src')
+            src_dir = app.config['SRC_DIR']
             analyze_script = os.path.join(src_dir, 'analyze_match_complete.py')
 
             # Changer temporairement le repertoire de travail
             original_dir = os.getcwd()
-            project_root = os.path.dirname(os.path.dirname(__file__))
+            project_root = app.config['BASE_DIR']
             os.chdir(project_root)
 
             # Construire la commande avec les options de stats
@@ -485,7 +505,7 @@ def analyze_match():
         print(f"[DEBUG] Anciens JSON nettoyes")
 
         # Chemin vers r6-dissect.exe
-        tools_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tools')
+        tools_dir = app.config['TOOLS_DIR']
         r6_dissect = os.path.join(tools_dir, 'r6-dissect.exe')
         print(f"[DEBUG] Chemin r6-dissect: {r6_dissect}")
 
@@ -524,13 +544,13 @@ def analyze_match():
         print(f"[DEBUG] {len(parsed_files)} fichiers parses avec succes")
 
         # Executer le script d'analyse Python
-        src_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src')
+        src_dir = app.config['SRC_DIR']
         analyze_script = os.path.join(src_dir, 'analyze_match_complete.py')
         print(f"[DEBUG] Script d'analyse: {analyze_script}")
 
         # Changer temporairement le repertoire de travail
         original_dir = os.getcwd()
-        project_root = os.path.dirname(os.path.dirname(__file__))
+        project_root = app.config['BASE_DIR']
         os.chdir(project_root)
         print(f"[DEBUG] Repertoire de travail change vers: {project_root}")
 
@@ -552,7 +572,7 @@ def analyze_match():
             }), 500
 
         # Trouver le fichier Excel genere (le plus recent)
-        project_root = os.path.dirname(os.path.dirname(__file__))
+        project_root = app.config['BASE_DIR']
         excel_files = [f for f in os.listdir(project_root) if f.startswith('Match_Stats_Complete_') and f.endswith('.xlsx')]
 
         if not excel_files:

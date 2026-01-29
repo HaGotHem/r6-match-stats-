@@ -36,3 +36,7 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# PyInstaller
+build/
+dist/
